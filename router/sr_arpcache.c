@@ -9,6 +9,7 @@
 #include "sr_arpcache.h"
 #include "sr_router.h"
 #include "sr_if.h"
+#include "sr_rt.h"
 #include "sr_protocol.h"
 
 /* 
@@ -18,6 +19,111 @@
 */
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
     /* Fill this in */
+    
+    /*
+    for each request on sr->cache.requests:
+         handle_arpreq(request)
+    */
+    sr_arpreq_t *req = sr->cache.requests;
+    sr_arpreq_t *next;
+    while(req != NULL) {
+    /*
+    Since handle_arpreq as defined in the comments above could destroy your
+    current request, make sure to save the next pointer before calling
+    handle_arpreq when traversing through the ARP requests linked list.
+    */
+        next = req->next;
+        handle_arpreq(sr,req);
+        req = next;
+    }
+
+}
+
+/**
+ * handle_arpreq - handles ARP Request
+ * @param sr_instance *sr
+ * @param sr_arpreq *req
+ *
+ * To meet the guidelines in the assignment (ARP requests are sent every second
+ * until we send 5 ARP requests, then we send ICMP host unreachable back to
+ * all packets waiting on this ARP request), you must fill out the following
+ * function that is called every second and is defined in sr_arpcache.c:
+ */
+void handle_arpreq(struct sr_instance *sr, sr_arpreq_t *req) {
+
+    time_t now;
+    time(&now);
+
+    /* if its been a second and time to send another requests */
+    if(difftime(now,req->sent) > 1.0) {
+        if(req->times_sent >= REQUEST_LIMIT) {
+            /* TODO
+            send icmp host unreachable to source addr of all pkts waiting
+                on this request
+             */
+        } else {
+          send_arpreq(sr,req->ip);
+          req->sent = now;
+          req->times_sent++;
+        }
+    }
+
+}
+
+/**
+ * send_arpreq
+ * builds and ethernet frame and broadcast the frame
+ * @param sr_instance *sr
+ * @param uint32_t ip - target/destination ip address
+ */
+void send_arpreq(struct sr_instance *sr, uint32_t ip) {
+
+    /*-------------|------------
+     | Ether Header| ARP Header |
+     --------------|-----------*/
+    /*
+      prepend ethernet header to arp header before sending
+      sr_send_packet requires ethernet header 
+    */
+    unsigned int total_length = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
+    uint8_t* buffer = malloc(total_length);
+
+    sr_rt_t* rt = sr_get_rt_entry(sr, ip);
+    sr_if_t* interface = sr_get_interface(sr, rt->interface);
+
+    /* PREPARE ETHERNET HEADER */
+    sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t*)(buffer);
+    /* set up broadcast address*/
+    memset(ether_header->ether_dhost, 0xFF, ETHER_ADDR_LEN);
+    memcpy(ether_header->ether_shost, interface->addr, ETHER_ADDR_LEN);
+    ether_header->ether_type = htons(ethertype_arp);
+
+    /* PREPARE ARP HEADER */
+    sr_arp_hdr_t *arp_header = (sr_arp_hdr_t*)(buffer + sizeof(sr_ethernet_hdr_t));
+
+    arp_header->ar_hrd = htons(arp_hrd_ethernet);
+    arp_header->ar_pro = ethertype_ip;
+    arp_header->ar_hln = ETHER_ADDR_LEN;
+    arp_header->ar_pln = IP_ADDR_LEN;
+    arp_header->ar_op  = htons(arp_op_request);
+
+    /* target ip and hardware addresses */
+    arp_header->ar_tip = ip;
+    /* hardware address to TBD  */
+    memset(arp_header->ar_tha, 0, ETHER_ADDR_LEN );
+
+    /* src hardware and ip addresses
+       this part is a bit confusing
+       sr_send_packet will send packet to interface
+       which will be injected into link layer by that interface.
+       So the source ip corresponds to that interface's ip
+     */
+    arp_header->ar_sip = interface->ip;
+    memcpy(arp_header->ar_sha, interface->addr, ETHER_ADDR_LEN );
+
+    sr_send_packet(sr, buffer, total_length, interface->name );
+    free(buffer);
+
 }
 
 /* You should not need to touch the rest of this code. */

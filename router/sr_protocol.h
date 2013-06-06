@@ -169,6 +169,9 @@ enum sr_arp_hrd_fmt {
   arp_hrd_ethernet = 0x0001,
 };
 
+/* ==== CUSTOM ==== */
+ #define IP_ADDR_LEN 4 /* measured in bytes */
+/* ==== END CUSTOM === */
 
 struct sr_arp_hdr
 {

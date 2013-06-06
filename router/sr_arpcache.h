@@ -74,6 +74,10 @@
 #define SR_ARPCACHE_SZ    100  
 #define SR_ARPCACHE_TO    15.0
 
+/* ==== CUSTOM ====*/
+#define REQUEST_LIMIT 5
+/* ==== END CUSTOM ====*/
+
 struct sr_packet {
     uint8_t *buf;               /* A raw Ethernet frame, presumably with the dest MAC empty */
     unsigned int len;           /* Length of raw Ethernet frame */
@@ -98,6 +102,7 @@ struct sr_arpreq {
     struct sr_packet *packets;  /* List of pkts waiting on this req to finish */
     struct sr_arpreq *next;
 };
+typedef struct sr_arpreq  sr_arpreq_t;
 
 struct sr_arpcache {
     struct sr_arpentry entries[SR_ARPCACHE_SZ];
@@ -105,6 +110,11 @@ struct sr_arpcache {
     pthread_mutex_t lock;
     pthread_mutexattr_t attr;
 };
+
+/* Sends ARP request
+ */
+void send_arpreq(struct sr_instance *sr, uint32_t ip); 
+void handle_arpreq(struct sr_instance *sr, sr_arpreq_t *req); 
 
 /* Checks if an IP->MAC mapping is in the cache. IP is in network byte order. 
    You must free the returned structure if it is not NULL. */

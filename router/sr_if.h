@@ -43,6 +43,7 @@ struct sr_if
   uint32_t speed;
   struct sr_if* next;
 };
+typedef struct sr_if sr_if_t;
 
 struct sr_if* sr_get_interface(struct sr_instance* sr, const char* name);
 void sr_add_interface(struct sr_instance*, const char*);

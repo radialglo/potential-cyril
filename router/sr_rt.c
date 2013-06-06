@@ -19,8 +19,61 @@
 #define __USE_MISC 1 /* force linux to show inet_aton */
 #include <arpa/inet.h>
 
+#include "sr_utils.h"
 #include "sr_rt.h"
 #include "sr_router.h"
+
+/**
+ * sr_get_rt_entry
+ * @param sr_instance *sr
+ * @param uint32_t dest_ip
+ *
+ * returns entry with longest prefix match, that is 
+ * the entry with the same destination and largest/longest subnet mask
+ */
+
+struct sr_rt* sr_get_rt_entry(struct sr_instance *sr, uint32_t dest_ip) {
+
+  /*
+    note that in_addr_t s_addr
+    is equivalent to uint32_t
+  */
+  sr_rt_t* entry = NULL;
+         entry = sr->routing_table;
+  sr_rt_t* best_match = NULL;
+  while (entry != NULL) {
+
+    if(dest_ip == entry->dest.s_addr) {
+
+      if(best_match == NULL) {
+        best_match = entry;
+      } else {
+      /*
+        since the routing table may contain multiple entries with same
+        destination, get the entry with longest prefix match on the subnet mask
+        masks are just uint32_t so compare values for longest/largest match
+      */
+        if(entry->mask.s_addr > best_match->mask.s_addr) {
+          best_match = entry;
+        }
+      }
+    }
+
+    entry = entry->next;
+  }
+
+  fprintf(stderr,"\n\n/* ---- Router Entry Lookup-----*/");
+  fprintf(stderr,"INTERFACE: %s\n",best_match->interface);
+  fprintf(stderr,"DESTINATION:\n");
+  print_addr_ip_int(dest_ip);
+  printf("GATEWAY:\n");
+  print_addr_ip_int(best_match->gw.s_addr);
+  fprintf(stderr,"MASK:\n");
+  print_addr_ip_int(best_match->mask.s_addr);
+  fprintf(stderr,"/* ---- End Router Lookup-----*/\n\n");
+
+  return best_match;
+}
 
 /*---------------------------------------------------------------------
  * Method:
