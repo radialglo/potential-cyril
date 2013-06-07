@@ -127,10 +127,12 @@ void sr_handlepacket(struct sr_instance* sr,
 
       process_arpreply(sr, arp_header);
 
+    /* Process the ARP request */
     } else {
 
-    /* send arp reply to the ARP requst*/
-      send_arpreply(sr, arp_header, interface);
+        /* TODO: fix this part */
+        /* send arp reply to the ARP requst*/
+        send_arpreply(sr, arp_header, interface);
     }
 
   } else if (ntohs(ether_header->ether_type) == ethertype_ip) {
@@ -146,39 +148,37 @@ void sr_handlepacket(struct sr_instance* sr,
 
     /* If destined to the router/interface
        what is the protcol field in IP header
-       ICMP -> ICMP processing (echo request, echo prely)
+       ICMP -> ICMP processing (echo request, echo reply)
        UDP,TCP -> ICMP port unreachable
     */
     if(ntohl(ip_header->ip_dst) == ntohl(iface->ip)) {
 
-      if(ip_header->ip_p == ip_protocol_icmp) {
+        if(ip_header->ip_p == ip_protocol_icmp) {
 
-       /*
-          TODO: ICMP -> ICMP processing (echo request, echo prely)
-        */
-      } else {
+            /* ICMP -> ICMP processing (echo request, echo prely) */
+            icmp_send_echo_reply(sr, buffer, len, interface);
+        } else {
 
-       /*
-          TODO: UDP,TCP -> ICMP port unreachable
-        */
-      }
+            /* UDP,TCP -> ICMP port unreachable */
+            icmp_send_error(sr, buffer, len, interface,
+                            ICMP_TYPE_UNREACHABLE, ICMP_CODE_PORT_UNREACH);
+        }
 
     } else {
 
       ip_header->ip_ttl -= 1;
       sr_rt_t* rt_entry = sr_get_rt_entry(sr, ip_header->ip_dst);
 
-        
       /*
           If destined to others, lookup routing table entry  note that gateway is next hop
           decrease TTL, If TTL = 0; ICMP Time exceeded
       */
       if(ip_header->ip_ttl <= 0) {
-        /* TODO: ICMP Time exceeded */
+        /* ICMP Time exceeded */
+        icmp_send_error(sr, buffer, len, interface,
+                        ICMP_TYPE_TIME_EXCEEDED, 0);
       } else {
-
       /*
-
           based on returned routing entry:
 
           if routing entry not found (is NULL) -> ICMP  network unreachable
@@ -194,15 +194,14 @@ void sr_handlepacket(struct sr_instance* sr,
                 req = arpcache_queuereq(next_hop_ip, packet, len)
                 handle_arpreq(req)
                 The packet argument should not be freed by the caller.
-
       */
         if(rt_entry == NULL) {
-          /*
-           TODO:  ICMP  network unreachable
-          */
+          /* ICMP network unreachable */
+          icmp_send_error(sr, buffer, len, interface,
+                          ICMP_TYPE_UNREACHABLE, ICMP_CODE_NET_UNREACH);
         } else {
 
-          /* intially set the destination mac_address to 0x0000*/
+          /* intially set the destination mac_address to 0x0000 */
           memset(ether_header->ether_dhost, 0, ETHER_ADDR_LEN);
           memcpy(ether_header->ether_shost, iface->addr,  ETHER_ADDR_LEN);
           ether_header->ether_type = htons(ethertype_arp);
@@ -236,72 +235,185 @@ void sr_handlepacket(struct sr_instance* sr,
 
   }
 
+    free(buffer);
 
 }/* end sr_ForwardPacket */
 
 /**
- * sendEchoReply
- * type 0 ICMP
- * @param sr_instance *sr
- * @param uint8_t *packet - includes ethernet headers 
- * @param unsigned int leng
- * @param char* interface - name of interface
+ * swap_ether_addr
+ * @param ether_header
+ * Swaps the src and dst MAC addresses
  */
-void sendEchoReply(struct sr_instance *sr, uint8_t *packet, unsigned int len,
-                   const char *interface) {
-
-    sr_if_t *iface = sr_get_interface(sr, interface);
-
-    uint8_t *dup_packet = malloc(len);
-    memcpy(dup_packet, packet, len);
-
-    /* PREPARE ETHER HEADER - just switch source and dest */
-    sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t*)(dup_packet);
-
+void swap_ether_addr(sr_ethernet_hdr_t *ether_header) {
     uint8_t dhost[ETHER_ADDR_LEN];
     memcpy(dhost, ether_header->ether_shost, ETHER_ADDR_LEN);
     memcpy(ether_header->ether_shost, ether_header->ether_dhost, ETHER_ADDR_LEN);
     memcpy(ether_header->ether_dhost, dhost, ETHER_ADDR_LEN);
+}
+
+/**
+ * calculate_ip_cksum
+ * clears cksum field, calculates ip checksum
+ */
+void calculate_ip_cksum(sr_ip_hdr_t *ip_header) {
+    ip_header->ip_sum = 0;
+    /*memset(&(ip_header->ip_sum), 0, sizeof(ip_header->ip_sum));*/
+    uint16_t checksum = cksum(ip_header, IP_HDR_LEN);
+    ip_header->ip_sum = checksum;
+}
+
+/**
+ * icmp_send_echo_reply
+ * type 0 ICMP
+ * @param sr_instance *sr
+ * @param uint8_t *packet - includes ethernet headers 
+    Can overwrite and reuse this packet to send.
+ * @param unsigned int leng
+ * @param char* interface - name of interface
+ */
+void icmp_send_echo_reply(struct sr_instance *sr, uint8_t *packet,
+                        unsigned int len, const char *interface) {
+
+    sr_if_t *iface = sr_get_interface(sr, interface);
+
+    /*** PREPARE ETHER HEADER - just switch source and dest */
+    sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t*)(packet);
+    swap_ether_addr(ether_header);
     /* the ether_type should be the same */
 
-    /* PREPARE IP HEADER */
-    sr_ip_hdr_t *ip_header = (sr_ip_hdr_t *)(dup_packet + ETHER_HDR_LEN);
+    /*** PREPARE IP HEADER */
+    sr_ip_hdr_t *ip_header = (sr_ip_hdr_t *)(packet + ETHER_HDR_LEN);
 
     /* Use random id and long ttl */
     ip_header->ip_id = rand() % 10000;
     ip_header->ip_ttl = INIT_TTL;
 
     /* Flip the source and destination addresses */
-    /* uint32_t ip_src, ip_dst; source and dest address */
     uint32_t new_ip_src = ip_header->ip_dst;
     ip_header->ip_dst = ip_header->ip_src;
     ip_header->ip_src = new_ip_src;
 
     /* calculate the new checksum for this ip header */
-    memset(&(ip_header->ip_sum), 0, sizeof(ip_header->ip_sum));
-    uint16_t checksum = cksum(ip_header, IP_HDR_LEN);
-    ip_header->ip_sum = checksum;
+    calculate_ip_cksum(ip_header);
 
-    /* Prepare the ICMP header */
-    /* identifier and sequence numbers are returned the same */
-    sr_icmp_t0_hdr_t *icmp_t0 =
-        (sr_icmp_t0_hdr_t *)(dup_packet + ETHER_HDR_LEN + IP_HDR_LEN);
+    /* Should be equivalent to ip_header->ip_len - IP_HDR_LEN */
+    unsigned int icmp_length =
+        len - ETHER_HDR_LEN - IP_HDR_LEN;
 
-    /* Type 0, code 0 */
-    icmp_t0->icmp_type = 0;
-    icmp_t0->icmp_code = 0;
+    /* Check ICMP checksum. for echo's, include the data in the checksum */
+    /*  The checksum is the 16-bit ones's complement of the one's
+    complement sum of the ICMP message starting with the ICMP Type.
+    For computing the checksum , the checksum field should be zero.
+    If the total length is odd, the received data is padded with one
+    octet of zeros for computing the checksum.  This checksum may be
+    replaced in the future.
+    */
+    unsigned int icmp_cksumming_length = icmp_length;
+    if (icmp_length % 2 != 0) {
+        ++icmp_cksumming_length;
+    }
 
-    /* validate the checksum */
-    checksum = cksum(icmp_t0, sizeof(icmp_t0));
-    if ( checksum != 0xFFFF) {
+    uint8_t *icmp_cksum_pkt = (uint8_t *)malloc(icmp_cksumming_length);
+    memset(icmp_cksum_pkt, 0, icmp_cksumming_length); /* pad octet of zeros */
+    memcpy(icmp_cksum_pkt, packet + ETHER_HDR_LEN + IP_HDR_LEN, icmp_length);
+    uint16_t checksum = cksum(icmp_cksum_pkt, icmp_cksumming_length);
+    if ( checksum != 0xFFFF) { /* no need to clear if check against 0xFFFF */
         /* TODO
            What to do here? 
          */
         fprintf(stderr, "Invalid checksum %hu\n", checksum);
-        free(dup_packet);
+        free(icmp_cksum_pkt);
         return;
     }
+    free(icmp_cksum_pkt);
+
+    /**** Prepare the ICMP header */
+    /* identifier and sequence numbers are returned the same */
+    sr_icmp_t0_hdr_t *icmp_t0 =
+        (sr_icmp_t0_hdr_t *)(packet + ETHER_HDR_LEN + IP_HDR_LEN);
+
+    /* Type 0, code 0 */
+    icmp_t0->icmp_type = ICMP_TYPE_ECHO_REPLY;
+    icmp_t0->icmp_code = 0;
+
+    /* calculate new checksum */
+    icmp_t0->icmp_sum = 0;
+    /* memset(&(icmp_t0->icmp_sum), 0, sizeof(icmp_t0->icmp_sum));*/
+    icmp_cksum_pkt = (uint8_t *) icmp_t0; /* use the pointer as an array now */
+    checksum = cksum(icmp_cksum_pkt, icmp_length);
+    icmp_t0->icmp_sum = checksum;
+
+    sr_send_packet(sr, packet, len, iface->name);
+}
+
+/**
+ * icmp_send_error
+ * type 3 and 11 ICMP
+ * @param sr_instance *sr
+ * @param uint8_t *packet - includes ethernet headers
+ * @param unsigned int len
+ * @param char* interface - name of interface
+ * @param uint8_t type - ICMP type
+ * @param uint8_t code - ICMP code
+ */
+void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
+                     unsigned int len, const char *interface,
+                     uint8_t type, uint8_t code) {
+
+    sr_if_t *iface = sr_get_interface(sr, interface);
+
+    unsigned int packet_size = ETHER_HDR_LEN + IP_HDR_LEN + ICMP_ERR_HDR_LEN;
+    uint8_t *dup_packet = malloc(packet_size);
+    memcpy(dup_packet, packet, packet_size);
+
+    /* PREPARE ETHER HEADER - just switch source and dest */
+    sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t*)(dup_packet);
+    swap_ether_addr(ether_header);
+    /* the ether_type should be the same */
+
+    /* PREPARE IP HEADER */
+    sr_ip_hdr_t *ip_header = (sr_ip_hdr_t *)(dup_packet + ETHER_HDR_LEN);
+
+    /* Update total length depending on ICMP data */
+    ip_header->ip_len = IP_HDR_LEN + ICMP_ERR_HDR_LEN;
+
+    /* Use long ttl */
+    /* TODO: what ttl to use for type 3 unreachable and 11 time exceeded? */
+    ip_header->ip_ttl = INIT_TTL;
+
+    /* Use protocol ICMP */
+    ip_header->ip_p = ip_protocol_icmp;
+
+    /* Use this interface's ip */
+    ip_header->ip_src = iface->ip;
+    ip_header->ip_dst = ip_header->ip_src;
+
+    /* calculate the new checksum for this ip header */
+    calculate_ip_cksum(ip_header);
+
+    /* Prepare the ICMP header */
+    sr_icmp_err_hdr_t *icmp_err =
+        (sr_icmp_err_hdr_t *)(dup_packet + ETHER_HDR_LEN + IP_HDR_LEN);
+
+    /* Type, code */
+    icmp_err->icmp_type = type;
+    icmp_err->icmp_code = code;
+
+    /* types 3, 11 return the IP header + 8 bytes of original datagram data */
+    /* Copy the IP header */
+    memcpy(&(icmp_err->data), ip_header, IP_HDR_LEN);
+    /* Copy the first 8 bytes of the original datagram data */
+    memcpy(&(icmp_err->data) + IP_HDR_LEN,
+        dup_packet + ETHER_HDR_LEN + IP_HDR_LEN, ICMP_DATA_SIZE - IP_HDR_LEN);
+
+    /* Calculate the new checksum for the icmp*/
+    icmp_err->icmp_sum = 0;
+    /*memset(&(icmp_err->icmp_sum), 0, sizeof(icmp_t11->icmp_sum));*/
+
+    uint16_t checksum = cksum(icmp_err, ICMP_ERR_HDR_LEN);
+    icmp_err->icmp_sum = checksum;
 
     sr_send_packet(sr, dup_packet, len, iface->name);
     free(dup_packet);
 }
+

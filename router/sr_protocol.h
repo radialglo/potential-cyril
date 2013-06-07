@@ -111,6 +111,16 @@ struct sr_icmp_t3_hdr {
 } __attribute__ ((packed)) ;
 typedef struct sr_icmp_t3_hdr sr_icmp_t3_hdr_t;
 
+/* Structure of a type 3 and 11 ICMP header */
+struct sr_icmp_err_hdr {
+  uint8_t icmp_type;
+  uint8_t icmp_code;
+  uint16_t icmp_sum;
+  uint32_t unused;
+  uint8_t data[ICMP_DATA_SIZE];
+
+} __attribute__ ((packed)) ;
+typedef struct sr_icmp_err_hdr sr_icmp_err_hdr_t;
 
 
 
@@ -195,10 +205,21 @@ struct sr_arp_hdr
 typedef struct sr_arp_hdr sr_arp_hdr_t;
 
 /* ==== CUSTOM ==== */
- #define IP_ADDR_LEN 4 /* measured in bytes */
- #define ETHER_HDR_LEN sizeof(sr_ethernet_hdr_t)
- #define ARP_HDR_LEN sizeof(sr_arp_hdr_t)
- #define IP_HDR_LEN sizeof(sr_ip_hdr_t)
+#define ICMP_TYPE_ECHO_REPLY 0
+#define ICMP_TYPE_UNREACHABLE 3
+#define ICMP_TYPE_TIME_EXCEEDED 11
+
+#define ICMP_CODE_NET_UNREACH 0
+#define ICMP_CODE_HOST_UNREACH 1
+#define ICMP_CODE_PORT_UNREACH 3
+
+#define IP_ADDR_LEN 4 /* measured in bytes */
+#define ETHER_HDR_LEN sizeof(sr_ethernet_hdr_t)
+#define ARP_HDR_LEN sizeof(sr_arp_hdr_t)
+#define IP_HDR_LEN sizeof(sr_ip_hdr_t)
+#define ICMP_T0_HDR_LEN sizeof(sr_icmp_t0_hdr_t)
+#define ICMP_T3_HDR_LEN sizeof(sr_icmp_t3_hdr_t)
+#define ICMP_ERR_HDR_LEN sizeof(sr_icmp_err_hdr_t)
 /* ==== END CUSTOM === */
 
 #define sr_IFACE_NAMELEN 32

@@ -57,10 +57,17 @@ void handle_arpreq(struct sr_instance *sr, sr_arpreq_t *req) {
     /* if it's been a second then time to send another request */
     if(difftime(now,req->sent) > 1.0) {
         if(req->times_sent >= REQUEST_LIMIT) {
-            /* TODO
-            send icmp host unreachable to source addr of all pkts waiting
-                on this request
+            /* send icmp host unreachable to source addr of all pkts waiting
+               on this request
              */
+            sr_packet_t *pkt;
+            sr_packet_t *nxt;
+            for (pkt = req->packets; pkt != NULL; pkt = nxt) {
+                nxt = pkt->next;
+                icmp_send_error(sr, pkt->buf, pkt->len, pkt->iface,
+                                ICMP_TYPE_UNREACHABLE, ICMP_CODE_HOST_UNREACH);
+            }
+
             sr_arpreq_destroy(&(sr->cache), req);
 
         } else {
