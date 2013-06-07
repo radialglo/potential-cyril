@@ -94,8 +94,8 @@ struct sr_icmp_t0_hdr {
     uint16_t icmp_sum;
     uint16_t icmp_identifier;
     uint16_t icmp_seq_num;
-} __attribute__ ((pakced)) ;
-typdef struct sr_icmp_t0_hdr sr_icmp_t0_hdr_t;
+} __attribute__ ((packed)) ;
+typedef struct sr_icmp_t0_hdr sr_icmp_t0_hdr_t;
 
 
 /* Structure of a type3 ICMP header

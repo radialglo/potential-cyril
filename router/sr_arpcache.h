@@ -94,6 +94,8 @@ struct sr_arpentry {
     int valid;
 };
 
+typedef struct sr_arpentry sr_arpentry_t;
+
 struct sr_arpreq {
     uint32_t ip;
     time_t sent;                /* Last time this ARP request was sent. You 
