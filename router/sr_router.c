@@ -160,5 +160,60 @@ void sr_handlepacket(struct sr_instance* sr,
 
 }/* end sr_ForwardPacket */
 
+/* type 0 ICMP
+   @param packet - includes ethernet headers 
+*/
+void sendEchoReply(struct sr_instance *sr, uint8_t *packet, unsigned int len,
+                   char *interface) {
 
+    sr_if_t *iface = sr_get_interface(sr, interface);
 
+    uint8_t *dup_packet = malloc(len);
+    memcpy(dup_packet, packet, len);
+
+    /* PREPARE ETHER HEADER - just switch source and dest */
+    sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t*)(dup_packet);
+
+    uint8_t dhost[ETHER_ADDR_LEN];
+    strncpy(dhost, ether_header->ether_shost, ETHER_ADDR_LEN);
+    memcpy(ether_header->ether_shost, ether_header->ether_dhost, ETHER_ADDR_LEN);
+    memcpy(ether_header->ether_dhost, dhost, ETHER_ADDR_LEN);
+    /* the ether_type should be the same */
+
+    /* PREPARE IP HEADER */
+    sr_ip_hdr_t *ip_header = (sr_ip_hdr_t *)(dup_packet + ETHER_HDR_LEN);
+
+    /* Use random id and long ttl */
+    ip_header->ip_id = rand() % 10000;
+    ip_header->ip_ttl = 255;
+
+    /* Flip the source and destination addresses */
+    uint32_t ip_src, ip_dst;	/* source and dest address */
+    uint32_t new_ip_src = ip_header->ip_dst;
+    ip_header->ip_dst = ip_header->ip_src;
+    ip_header->ip_src = new_ip_src;
+
+    /* calculate the new checksum for this ip header */
+    memset(&(ip_header->ip_sum), 0, sizeof(ip_header->ip_sum));
+    uint16_t checksum = cksum(ip_header, IP_HDR_LEN);
+    ip_header->ip_sum = checksum;
+
+    /* Prepare the ICMP header */
+    /* identifier and sequence numbers are returned the same */
+    sr_icmp_t0_hdr_t *icmp_t0 =
+        (sr_icmp_t0_hdr_t *)(dup_packet + ETHER_HDR_LEN + IP_HDR_LEN);
+
+    /* validate the checksum */
+    checksum = cksum(icmp_t0, sizeof(icmp_t0));
+    if ( checksum != 0xFFFF) {
+        /* TODO
+           What to do here? 
+         */
+        fprintf(stderr, "Invalid checksum %hu\n", checksum);
+        free(dup_packet);
+        return;
+    }
+
+    sr_send_packet(sr, dup_packet, len, iface->name);
+    free(dup_packet);
+}

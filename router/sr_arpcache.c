@@ -54,17 +54,19 @@ void handle_arpreq(struct sr_instance *sr, sr_arpreq_t *req) {
     time_t now;
     time(&now);
 
-    /* if its been a second and time to send another requests */
+    /* if it's been a second then time to send another request */
     if(difftime(now,req->sent) > 1.0) {
         if(req->times_sent >= REQUEST_LIMIT) {
             /* TODO
             send icmp host unreachable to source addr of all pkts waiting
                 on this request
              */
+            sr_arpreq_destroy(&(sr->cache), req);
+
         } else {
-          send_arpreq(sr,req->ip);
-          req->sent = now;
-          req->times_sent++;
+            send_arpreq(sr,req->ip);
+            req->sent = now;
+            req->times_sent++;
         }
     }
 
@@ -102,14 +104,14 @@ void send_arpreq(struct sr_instance *sr, uint32_t ip) {
     sr_arp_hdr_t *arp_header = (sr_arp_hdr_t*)(buffer + ETHER_HDR_LEN);
 
     arp_header->ar_hrd = htons(arp_hrd_ethernet);
-    arp_header->ar_pro = htons(ethertype_ip);
+    arp_header->ar_pro = htons(ethertype_ip); /* IPV4 */
     arp_header->ar_hln = ETHER_ADDR_LEN;
     arp_header->ar_pln = IP_ADDR_LEN;
     arp_header->ar_op  = htons(arp_op_request);
 
     /* target ip and hardware addresses */
     arp_header->ar_tip = htonl(ip);
-    /* hardware address to TBD  */
+    /* hardware address TBD  */
     memset(arp_header->ar_tha, 0, ETHER_ADDR_LEN );
 
     /* src hardware and ip addresses
@@ -188,7 +190,7 @@ void process_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header) {
      insert it into the cache and
      get request and its pending packets 
    */
-  sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), arp_header->ar_sha, ntohl(arp_header->ar_sip));
+  sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), arp_header->ar_sha, htonl(arp_header->ar_sip));
 
 
   if(req != NULL) {
@@ -203,7 +205,7 @@ void process_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header) {
       sr_packet_t *next = packet->next;
 
       /*
-       now update he next destination of the ether header in packet
+       now update the next destination of the ether header in packet
        the next destination is the source hardware address of the arp_header
        */
       memcpy(packet->buf, arp_header->ar_sha, ETHER_ADDR_LEN);

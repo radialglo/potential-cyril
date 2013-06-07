@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <assert.h>
 #include <string.h>
 #include <unistd.h>
@@ -69,6 +70,7 @@ int main(int argc, char **argv)
 
     printf("Using %s\n", VERSION_INFO);
 
+    srand(time(NULL)); /* for random IP identification in ICMP */
     while ((c = getopt(argc, argv, "hs:v:p:u:t:r:l:T:")) != EOF)
     {
         switch (c)
