@@ -43,15 +43,19 @@ struct sr_rt* sr_get_rt_entry(struct sr_instance *sr, uint32_t dest_ip) {
   sr_rt_t* best_match = NULL;
   while (entry != NULL) {
 
-    if(dest_ip == entry->dest.s_addr) {
+    /*
+       make sure that the CIDR or network id matches the network id of the entry
+       In other words make sure both ip addresses belog to same subnet
+       finally choose the greatest netmask, which produces the longest prefix match
+     */
+    if((dest_ip & entry->mask.s_addr) == (entry->dest.s_addr & entry->mask.s_addr)) {
 
       if(best_match == NULL) {
         best_match = entry;
       } else {
       /*
-        since the routing table may contain multiple entries with same
-        destination, get the entry with longest prefix match on the subnet mask
-        masks are just uint32_t so compare values for longest/largest match
+        since the the dest_ip may fall under multiple subnets choose
+        the one with the largest mask which produces the longest prefix match
       */
         if(entry->mask.s_addr > best_match->mask.s_addr) {
           best_match = entry;

@@ -12,6 +12,8 @@
  **********************************************************************/
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 
@@ -79,6 +81,82 @@ void sr_handlepacket(struct sr_instance* sr,
   printf("*** -> Received packet of length %d \n",len);
 
   /* fill in code here */
+
+  /*
+    Since we are being lent the packet let's make a duplicate so that 
+    can use it in the scope of different methods
+   */
+  uint8_t *dup_packet = malloc(len);
+  memcpy(dup_packet, packet, len);
+
+  /* EXTRACT ETHERNET HEADER FROM PACKET*/
+  sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t*)(dup_packet); 
+
+  /*
+    Check destination mac address
+    matches the coresponding interface
+    at which packet was received
+   */
+
+  sr_if_t *iface = sr_get_interface(sr, interface);
+  if(memcmp(ether_header->ether_dhost,iface->addr,ETHER_ADDR_LEN) != 0) {
+    fprintf(stderr,"Destination mac address %s does not match interface mac address %s\n",
+    ether_header->ether_dhost,iface->addr);
+    free(dup_packet);
+    return;
+  }
+
+  /*
+    Check type field in the ethernet header
+   */
+  if(ntohs(ether_header->ether_type) == ethertype_arp) {
+    /* If it is an ARP reply,
+       do ARP reply proccessing (processing algorithm is in sr_arpcache.h) 
+       else it is an ARP request, send an ARP reply
+     */
+
+     /* EXTRACT ARP HEADER */
+     sr_arp_hdr_t *arp_header = (sr_arp_hdr_t*)(packet + ETHER_HDR_LEN);
+
+    if(ntohs(arp_header->ar_op) == arp_op_reply) {
+
+      process_arpreply(sr, arp_header);
+
+    } else {
+
+    /* send arp reply to the ARP requst*/
+      send_arpreply(sr, arp_header, interface);
+    }
+
+  } else if (ntohs(ether_header->ether_type) == ethertype_ip) {
+    /* TODO: Verify checksum, if fail: drop/free the packet*/
+
+
+    /* TODO:
+       Check destination IP
+       If destined to the router,
+       what is the protcol field in IP header
+       ICMP -> ICMP processing (echo request, echo prely)
+       UDP,TCP -> ICMP port unreachable
+    */
+
+      
+    /* TODO:
+        If destined to others, lookup gateway address in routing table
+        decrease TTL, If TTL = 0; ICMP Time exceeded
+
+        based on returned routing entry:
+
+        if routing entry not found (is NULL) -> ICMP  network unreachable
+        queue it up into arp request  queue
+        free the passed packet into the queue
+     */
+
+    
+
+  }
+
+  free(dup_packet);
 
 }/* end sr_ForwardPacket */
 

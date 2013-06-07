@@ -85,46 +85,143 @@ void send_arpreq(struct sr_instance *sr, uint32_t ip) {
       prepend ethernet header to arp header before sending
       sr_send_packet requires ethernet header 
     */
-    unsigned int total_length = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
+    unsigned int total_length = ETHER_HDR_LEN + ARP_HDR_LEN;
     uint8_t* buffer = malloc(total_length);
 
     sr_rt_t* rt = sr_get_rt_entry(sr, ip);
-    sr_if_t* interface = sr_get_interface(sr, rt->interface);
+    sr_if_t* iface = sr_get_interface(sr, rt->interface);
 
     /* PREPARE ETHERNET HEADER */
     sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t*)(buffer);
     /* set up broadcast address*/
     memset(ether_header->ether_dhost, 0xFF, ETHER_ADDR_LEN);
-    memcpy(ether_header->ether_shost, interface->addr, ETHER_ADDR_LEN);
+    memcpy(ether_header->ether_shost, iface->addr, ETHER_ADDR_LEN);
     ether_header->ether_type = htons(ethertype_arp);
 
     /* PREPARE ARP HEADER */
-    sr_arp_hdr_t *arp_header = (sr_arp_hdr_t*)(buffer + sizeof(sr_ethernet_hdr_t));
+    sr_arp_hdr_t *arp_header = (sr_arp_hdr_t*)(buffer + ETHER_HDR_LEN);
 
     arp_header->ar_hrd = htons(arp_hrd_ethernet);
-    arp_header->ar_pro = ethertype_ip;
+    arp_header->ar_pro = htons(ethertype_ip);
     arp_header->ar_hln = ETHER_ADDR_LEN;
     arp_header->ar_pln = IP_ADDR_LEN;
     arp_header->ar_op  = htons(arp_op_request);
 
     /* target ip and hardware addresses */
-    arp_header->ar_tip = ip;
+    arp_header->ar_tip = htonl(ip);
     /* hardware address to TBD  */
     memset(arp_header->ar_tha, 0, ETHER_ADDR_LEN );
 
     /* src hardware and ip addresses
        this part is a bit confusing
-       sr_send_packet will send packet to interface
-       which will be injected into link layer by that interface.
-       So the source ip corresponds to that interface's ip
+       sr_send_packet will send packet to iface
+       which will be injected into link layer by that iface.
+       So the source ip corresponds to that iface's ip
      */
-    arp_header->ar_sip = interface->ip;
-    memcpy(arp_header->ar_sha, interface->addr, ETHER_ADDR_LEN );
+    arp_header->ar_sip = htonl(iface->ip);
+    memcpy(arp_header->ar_sha, iface->addr, ETHER_ADDR_LEN );
 
-    sr_send_packet(sr, buffer, total_length, interface->name );
+    sr_send_packet(sr, buffer, total_length, iface->name );
     free(buffer);
 
 }
+
+/**
+ * send_arpreply
+ * 
+ * @param struct sr_instance *sr
+ * @param sr_Arphdr_t arp_header:
+ * @param char* name - source interface name
+ */
+void send_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header, const char* name) {
+
+    sr_if_t *iface = sr_get_interface(sr, name);
+
+    unsigned int total_length = ETHER_HDR_LEN + ARP_HDR_LEN;
+
+    uint8_t* buffer = malloc(total_length);
+
+    /* PREPARE ETHER HEADER */
+    sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t*)(buffer);
+    memcpy(ether_header->ether_dhost, arp_header->ar_sha, ETHER_ADDR_LEN);
+    memcpy(ether_header->ether_shost, iface->addr, ETHER_ADDR_LEN);
+    ether_header->ether_type = htons(ethertype_arp);
+
+
+    /* PREPARE ARP HEADER */
+
+    /* The target is now the source since we are sending a reply */
+    memcpy(arp_header->ar_tha, arp_header->ar_sha, ETHER_ADDR_LEN);
+    arp_header->ar_tip = htonl(arp_header->ar_sip);
+
+    /*The source is the current interface */
+    memcpy(arp_header->ar_sha, iface->addr, ETHER_ADDR_LEN );
+    arp_header->ar_sip = htonl(iface->ip);
+
+    arp_header->ar_hrd = htons(arp_hrd_ethernet);
+    arp_header->ar_pro = htons(ethertype_ip);
+    arp_header->ar_hln = ETHER_ADDR_LEN;
+    arp_header->ar_pln = IP_ADDR_LEN;
+    arp_header->ar_op = htons(arp_op_reply);
+
+    /*  append the arp header to the end of buffer*/
+    memcpy(buffer + ETHER_HDR_LEN, arp_header, ARP_HDR_LEN);
+
+    sr_send_packet(sr, buffer,total_length , iface->name);
+    free(buffer);
+
+}
+
+/**
+ * process_arp_reply
+ *
+ * insert arp record into cache
+ * then locates pending packets in cache
+ * and sends out their messages
+ * @param sr_instance *sr
+ * @param sr_arp_hdr_t *arp_header
+ *
+ */
+void process_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header) {
+
+  /* Now that we found the record 
+     insert it into the cache and
+     get request and its pending packets 
+   */
+  sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), arp_header->ar_sha, ntohl(arp_header->ar_sip));
+
+
+  if(req != NULL) {
+   /*
+   if req:
+       send all packets on the req->packets linked list
+       arpreq_destroy(req)
+    */
+    sr_packet_t *packet = req->packets;
+    while(packet != NULL) {
+
+      sr_packet_t *next = packet->next;
+
+      /*
+       now update he next destination of the ether header in packet
+       the next destination is the source hardware address of the arp_header
+       */
+      memcpy(packet->buf, arp_header->ar_sha, ETHER_ADDR_LEN);
+
+      sr_send_packet(sr, packet->buf, packet->len, packet->iface); 
+  
+      packet = next;
+
+    }
+
+    /* 
+      finally destroy the request and its related packets 
+     */
+    sr_arpreq_destroy(&(sr->cache), req);
+
+  }
+}
+
 
 /* You should not need to touch the rest of this code. */
 

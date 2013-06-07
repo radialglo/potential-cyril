@@ -85,6 +85,8 @@ struct sr_packet {
     struct sr_packet *next;
 };
 
+typedef struct sr_packet sr_packet_t;
+
 struct sr_arpentry {
     unsigned char mac[6]; 
     uint32_t ip;                /* IP addr in network byte order */
@@ -115,6 +117,8 @@ struct sr_arpcache {
  */
 void send_arpreq(struct sr_instance *sr, uint32_t ip); 
 void handle_arpreq(struct sr_instance *sr, sr_arpreq_t *req); 
+void send_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header, const char* name); 
+void process_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header);
 
 /* Checks if an IP->MAC mapping is in the cache. IP is in network byte order. 
    You must free the returned structure if it is not NULL. */

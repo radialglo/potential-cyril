@@ -169,9 +169,6 @@ enum sr_arp_hrd_fmt {
   arp_hrd_ethernet = 0x0001,
 };
 
-/* ==== CUSTOM ==== */
- #define IP_ADDR_LEN 4 /* measured in bytes */
-/* ==== END CUSTOM === */
 
 struct sr_arp_hdr
 {
@@ -186,6 +183,13 @@ struct sr_arp_hdr
     uint32_t        ar_tip;             /* target IP address            */
 } __attribute__ ((packed)) ;
 typedef struct sr_arp_hdr sr_arp_hdr_t;
+
+/* ==== CUSTOM ==== */
+ #define IP_ADDR_LEN 4 /* measured in bytes */
+ #define ETHER_HDR_LEN sizeof(sr_ethernet_hdr_t)
+ #define ARP_HDR_LEN sizeof(sr_arp_hdr_t)
+ #define IP_HDR_LEN sizeof(sr_ip_hdr_t)
+/* ==== END CUSTOM === */
 
 #define sr_IFACE_NAMELEN 32
 
