@@ -185,7 +185,7 @@ void sendEchoReply(struct sr_instance *sr, uint8_t *packet, unsigned int len,
 
     /* Use random id and long ttl */
     ip_header->ip_id = rand() % 10000;
-    ip_header->ip_ttl = 255;
+    ip_header->ip_ttl = INIT_TTL;
 
     /* Flip the source and destination addresses */
     uint32_t ip_src, ip_dst;	/* source and dest address */
@@ -202,6 +202,10 @@ void sendEchoReply(struct sr_instance *sr, uint8_t *packet, unsigned int len,
     /* identifier and sequence numbers are returned the same */
     sr_icmp_t0_hdr_t *icmp_t0 =
         (sr_icmp_t0_hdr_t *)(dup_packet + ETHER_HDR_LEN + IP_HDR_LEN);
+
+    /* Type 0, code 0 */
+    icmp_t0->type = 0;
+    icmp_t0->code = 0;
 
     /* validate the checksum */
     checksum = cksum(icmp_t0, sizeof(icmp_t0));
