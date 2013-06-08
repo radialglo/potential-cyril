@@ -134,6 +134,9 @@ void sr_handlepacket(struct sr_instance* sr,
      sr_arp_hdr_t *arp_header = (sr_arp_hdr_t*)(packet + ETHER_HDR_LEN);
      print_hdr_arp((uint8_t*)arp_header);
 
+     /* insert the client's mac information into cache*/
+     sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), arp_header->ar_sha, arp_header->ar_sip);
+
     if(ntohs(arp_header->ar_op) == arp_op_reply) {
 
       process_arpreply(sr, arp_header);
@@ -141,7 +144,7 @@ void sr_handlepacket(struct sr_instance* sr,
     /* Process the ARP request */
     } else {
 
-     printf("... RECEIVED ARP REPLY\n");
+     printf("... RECEIVED ARP REQUEST\n");
      /* send arp reply to the ARP request*/
       send_arpreply(sr, arp_header, interface);
      printf("... SENT ARP REPLY\n");
@@ -158,6 +161,9 @@ void sr_handlepacket(struct sr_instance* sr,
         free(buffer);
         return;
     }
+
+    /* insert the client's mac information into cache*/
+    sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), ether_header->ether_shost, ip_header->ip_src);
 
     /* If destined to the router/interface
        what is the protcol field in IP header
