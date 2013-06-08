@@ -8,7 +8,11 @@
 
 
 /* ==== IMPLEMENTATION DETAILS ==== */
+We implemented the arp, routing and icmp.
+However there is a bug with the icmp.
 
 
 
 /* ==== CONTRIBUTION DETAILS ===*/
+Anthony - arp, routing.
+Stanley - icmp.

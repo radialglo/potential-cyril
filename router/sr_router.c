@@ -431,6 +431,9 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
     /* Use protocol ICMP - 1 byte */
     ip_header->ip_p = ip_protocol_icmp;
 
+    /* length of units of 4 bytes */
+    ip_header->ip_hl = 5;
+
     /* calculate the new checksum for this ip header */
     calculate_ip_cksum(ip_header);
 
@@ -461,22 +464,30 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
     /* the ether_type should be the same */
     ether_header->ether_type = htons(ethertype_ip);
 
-    /* Use the gateway's interface MAC as the source MAC */
-    memcpy(ether_header->ether_shost, out_iface->addr, ETHER_ADDR_LEN);
+    /*memcpy(ether_header->ether_shost, out_iface->addr, ETHER_ADDR_LEN);*/
 
     /* get arp entry */
+
+    
+    /*
     in_addr_t next_hop_ip = rt_entry->gw.s_addr;
     sr_arpentry_t *arp_entry = sr_arpcache_lookup(&(sr->cache), next_hop_ip);
     if (arp_entry != NULL) {
-        /* Use cached ARP as the dst MAC */
         memcpy(ether_header->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
+        print_hdr_eth((uint8_t *)ether_header);
+        print_hdr_ip((uint8_t *)ip_header);
+        print_hdr_icmp((uint8_t *)icmp_err);
         sr_send_packet(sr, buffer, buffer_size, out_iface->name);
         free(arp_entry);
         free(buffer);
     } else {
-        /* Not found in the ARP cache so queue it */
         sr_arpreq_t *req = sr_arpcache_queuereq(&(sr->cache),
             next_hop_ip, buffer, buffer_size, out_iface->name);
         handle_arpreq(sr, req);
-    }
+    } */
+swap_ether_addr(ether_header);                                                  
+        print_hdr_eth((uint8_t *)ether_header);
+        print_hdr_ip((uint8_t *)ip_header);
+        print_hdr_icmp((uint8_t *)icmp_err);
+    sr_send_packet(sr, buffer, buffer_size, out_iface->name);   
 }
