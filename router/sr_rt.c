@@ -26,7 +26,7 @@
 /**
  * sr_get_rt_entry
  * @param sr_instance *sr
- * @param uint32_t dest_ip
+ * @param uint32_t dest_ip network byte order
  *
  * returns entry with longest prefix match, that is 
  * the entry with the same destination and largest/longest subnet mask
@@ -50,6 +50,10 @@ struct sr_rt* sr_get_rt_entry(struct sr_instance *sr, uint32_t dest_ip) {
      */
     if((dest_ip & entry->mask.s_addr) == (entry->dest.s_addr & entry->mask.s_addr)) {
 
+      /*
+        print_addr_ip_int(entry->dest.s_addr);
+        print_addr_ip_int(dest_ip);
+      */
       if(best_match == NULL) {
         best_match = entry;
       } else {

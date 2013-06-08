@@ -11,6 +11,7 @@
 #include "sr_if.h"
 #include "sr_rt.h"
 #include "sr_protocol.h"
+#include "sr_utils.h"
 
 /* 
   This function gets called every second. For each request sent out, we keep
@@ -117,7 +118,7 @@ void send_arpreq(struct sr_instance *sr, uint32_t ip) {
     arp_header->ar_op  = htons(arp_op_request);
 
     /* target ip and hardware addresses */
-    arp_header->ar_tip = htonl(ip);
+    arp_header->ar_tip = ip;
     /* hardware address TBD  */
     memset(arp_header->ar_tha, 0, ETHER_ADDR_LEN );
 
@@ -127,7 +128,7 @@ void send_arpreq(struct sr_instance *sr, uint32_t ip) {
        which will be injected into link layer by that iface.
        So the source ip corresponds to that iface's ip
      */
-    arp_header->ar_sip = htonl(iface->ip);
+    arp_header->ar_sip = iface->ip;
     memcpy(arp_header->ar_sha, iface->addr, ETHER_ADDR_LEN );
 
     sr_send_packet(sr, buffer, total_length, iface->name );
@@ -161,11 +162,11 @@ void send_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header, const char*
 
     /* The target is now the source since we are sending a reply */
     memcpy(arp_header->ar_tha, arp_header->ar_sha, ETHER_ADDR_LEN);
-    arp_header->ar_tip = htonl(arp_header->ar_sip);
+    arp_header->ar_tip = arp_header->ar_sip;
 
     /*The source is the current interface */
     memcpy(arp_header->ar_sha, iface->addr, ETHER_ADDR_LEN );
-    arp_header->ar_sip = htonl(iface->ip);
+    arp_header->ar_sip = iface->ip;
 
     arp_header->ar_hrd = htons(arp_hrd_ethernet);
     arp_header->ar_pro = htons(ethertype_ip);
@@ -176,7 +177,11 @@ void send_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header, const char*
     /*  append the arp header to the end of buffer*/
     memcpy(buffer + ETHER_HDR_LEN, arp_header, ARP_HDR_LEN);
 
+    print_hdr_eth((uint8_t *)ether_header);
+    print_hdr_arp((uint8_t *)arp_header);
+
     sr_send_packet(sr, buffer,total_length , iface->name);
+    printf("ARP REPLY Packet Sent\n");
     free(buffer);
 
 }
@@ -197,7 +202,11 @@ void process_arpreply(struct sr_instance *sr, sr_arp_hdr_t *arp_header) {
      insert it into the cache and
      get request and its pending packets 
    */
-  sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), arp_header->ar_sha, htonl(arp_header->ar_sip));
+
+  fprintf(stderr, "\n\n ...Processing ARP REPLY\n\n");
+  print_hdr_arp((uint8_t *)arp_header);
+  fprintf(stderr, "\n\n" );
+  sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), arp_header->ar_sha, arp_header->ar_sip);
 
 
   if(req != NULL) {

@@ -104,9 +104,19 @@ void sr_handlepacket(struct sr_instance* sr,
    */
 
   sr_if_t *iface = sr_get_interface(sr, interface);
-  if(memcmp(ether_header->ether_dhost,iface->addr,ETHER_ADDR_LEN) != 0) {
-    fprintf(stderr,"Destination mac address %s does not match interface mac address %s\n",
-    ether_header->ether_dhost,iface->addr);
+  print_hdr_eth((uint8_t *)ether_header);
+  sr_print_if(iface);
+  uint8_t broadcast_addr[ETHER_ADDR_LEN];
+  memset(broadcast_addr, 0xFF, ETHER_ADDR_LEN);
+  /*
+  print_addr_eth(ether_header->ether_dhost);
+  print_addr_eth(broadcast_addr);
+  */
+
+
+  if((memcmp(ether_header->ether_dhost,broadcast_addr,ETHER_ADDR_LEN) != 0)  && 
+  (memcmp(ether_header->ether_dhost,iface->addr,ETHER_ADDR_LEN) != 0)) {
+    fprintf(stderr,"Destination mac address does not match interface mac address \n");
     free(buffer);
     return;
   }
@@ -122,6 +132,7 @@ void sr_handlepacket(struct sr_instance* sr,
 
      /* EXTRACT ARP HEADER */
      sr_arp_hdr_t *arp_header = (sr_arp_hdr_t*)(packet + ETHER_HDR_LEN);
+     print_hdr_arp((uint8_t*)arp_header);
 
     if(ntohs(arp_header->ar_op) == arp_op_reply) {
 
@@ -130,15 +141,17 @@ void sr_handlepacket(struct sr_instance* sr,
     /* Process the ARP request */
     } else {
 
-        /* TODO: fix this part */
-        /* send arp reply to the ARP requst*/
-        send_arpreply(sr, arp_header, interface);
+     printf("... RECEIVED ARP REPLY\n");
+     /* send arp reply to the ARP request*/
+      send_arpreply(sr, arp_header, interface);
+     printf("... SENT ARP REPLY\n");
     }
 
   } else if (ntohs(ether_header->ether_type) == ethertype_ip) {
 
     /* Verify checksum, if fail: drop/free the packet*/
     sr_ip_hdr_t *ip_header = (sr_ip_hdr_t *)(buffer + ETHER_HDR_LEN);
+    print_hdr_ip((uint8_t *)ip_header);
     uint16_t checksum = cksum(ip_header, IP_HDR_LEN);
     if(checksum != 0xFFFF) {
         fprintf(stderr, "Invalid checksum %d\n", checksum);
@@ -201,30 +214,41 @@ void sr_handlepacket(struct sr_instance* sr,
                           ICMP_TYPE_UNREACHABLE, ICMP_CODE_NET_UNREACH);
         } else {
 
-          /* intially set the destination mac_address to 0x0000 */
-          memset(ether_header->ether_dhost, 0, ETHER_ADDR_LEN);
-          memcpy(ether_header->ether_shost, iface->addr,  ETHER_ADDR_LEN);
-          ether_header->ether_type = htons(ethertype_arp);
+          /* update checksum in IP header*/
+          ip_header->ip_sum = 0;
+          ip_header->ip_sum = cksum(ip_header, IP_HDR_LEN);
 
-
+          /* next hop is determined by gateway address from routing entry*/
           in_addr_t next_hop_ip = rt_entry->gw.s_addr;
+          /* intially set the destination mac_address to 0x0000*/
+          memset(ether_header->ether_dhost, 0, ETHER_ADDR_LEN);
+          ether_header->ether_type = htons(ethertype_ip);
+          /* get infromation regarding the gateways interface*/
+          sr_if_t* gw_iface = sr_get_interface(sr, rt_entry->interface);
+          memcpy(ether_header->ether_shost, gw_iface->addr,  ETHER_ADDR_LEN);
+
           /* get arp entry*/
           sr_arpentry_t* arp_entry = sr_arpcache_lookup(&(sr->cache), next_hop_ip);
           if(arp_entry != NULL) {
 
+            fprintf(stderr, "\n\nArp entry found! Packet being sent.\n\n");
             /* copy over mac address we just found */
             memcpy(ether_header->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
-            sr_send_packet(sr, packet, len, interface);
+            sr_send_packet(sr, buffer, len, rt_entry->interface);
+
+            fprintf(stderr, "\n\nPacket Forwarded \n\n");
             free(arp_entry);
             free(buffer);
 
           } else {
 
+             fprintf(stderr, "Arp entry not found! Packet put in queue.\n");
+
             /* 
               queue packet into cache
               DON'T FREE PACKET
              */
-            sr_arpreq_t* req = sr_arpcache_queuereq(&(sr->cache), next_hop_ip, buffer, len, interface);
+            sr_arpreq_t* req = sr_arpcache_queuereq(&(sr->cache), next_hop_ip, buffer, len, rt_entry->interface);
             handle_arpreq(sr, req);
 
           }
@@ -235,7 +259,6 @@ void sr_handlepacket(struct sr_instance* sr,
 
   }
 
-    free(buffer);
 
 }/* end sr_ForwardPacket */
 
