@@ -38,8 +38,7 @@ struct sr_rt* sr_get_rt_entry(struct sr_instance *sr, uint32_t dest_ip) {
     note that in_addr_t s_addr
     is equivalent to uint32_t
   */
-  sr_rt_t* entry = NULL;
-         entry = sr->routing_table;
+  sr_rt_t* entry =  sr->routing_table;
   sr_rt_t* best_match = NULL;
   while (entry != NULL) {
 
@@ -70,15 +69,18 @@ struct sr_rt* sr_get_rt_entry(struct sr_instance *sr, uint32_t dest_ip) {
     entry = entry->next;
   }
 
-  fprintf(stderr,"\n\n/* ---- Router Entry Lookup-----*/");
-  fprintf(stderr,"INTERFACE: %s\n",best_match->interface);
-  fprintf(stderr,"DESTINATION:\n");
-  print_addr_ip_int(dest_ip);
-  printf("GATEWAY:\n");
-  print_addr_ip_int(best_match->gw.s_addr);
-  fprintf(stderr,"MASK:\n");
-  print_addr_ip_int(best_match->mask.s_addr);
-  fprintf(stderr,"/* ---- End Router Lookup-----*/\n\n");
+
+    if (best_match != NULL) {
+        fprintf(stderr,"\n\n/* ---- Router Entry Lookup-----*/");
+        fprintf(stderr,"INTERFACE: %s\n",best_match->interface);
+        fprintf(stderr,"DESTINATION:\n");
+        print_addr_ip_int(dest_ip);
+        printf("GATEWAY:\n");
+        print_addr_ip_int(best_match->gw.s_addr);
+        fprintf(stderr,"MASK:\n");
+        print_addr_ip_int(best_match->mask.s_addr);
+        fprintf(stderr,"/* ---- End Router Lookup-----*/\n\n");
+   }
 
   return best_match;
 }

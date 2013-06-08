@@ -113,7 +113,6 @@ void sr_handlepacket(struct sr_instance* sr,
   print_addr_eth(broadcast_addr);
   */
 
-
   if((memcmp(ether_header->ether_dhost,broadcast_addr,ETHER_ADDR_LEN) != 0)  && 
   (memcmp(ether_header->ether_dhost,iface->addr,ETHER_ADDR_LEN) != 0)) {
     fprintf(stderr,"Destination mac address does not match interface mac address \n");
@@ -135,7 +134,7 @@ void sr_handlepacket(struct sr_instance* sr,
      print_hdr_arp((uint8_t*)arp_header);
 
      /* insert the client's mac information into cache*/
-     sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), arp_header->ar_sha, arp_header->ar_sip);
+    sr_arpcache_insert(&(sr->cache), arp_header->ar_sha, arp_header->ar_sip);
 
     if(ntohs(arp_header->ar_op) == arp_op_reply) {
 
@@ -163,109 +162,112 @@ void sr_handlepacket(struct sr_instance* sr,
     }
 
     /* insert the client's mac information into cache*/
-    sr_arpreq_t *req = sr_arpcache_insert(&(sr->cache), ether_header->ether_shost, ip_header->ip_src);
+    sr_arpcache_insert(&(sr->cache), ether_header->ether_shost, ip_header->ip_src);
 
-    /* If destined to the router/interface
-       what is the protcol field in IP header
+    /* If destined to the router/interfaces
+       what is the protocol field in IP header
        ICMP -> ICMP processing (echo request, echo reply)
        UDP,TCP -> ICMP port unreachable
     */
-    if(ntohl(ip_header->ip_dst) == ntohl(iface->ip)) {
+    for (; iface != NULL; iface = iface->next) { 
 
-        if(ip_header->ip_p == ip_protocol_icmp) {
+        if(ntohl(ip_header->ip_dst) == ntohl(iface->ip)) {
 
-            /* ICMP -> ICMP processing (echo request, echo prely) */
-            icmp_send_echo_reply(sr, buffer, len);
+            if(ip_header->ip_p == ip_protocol_icmp) {
+
+                /* ICMP -> ICMP processing (echo request, echo prely) */
+                icmp_send_echo_reply(sr, buffer, len);
+                free(buffer);
+                return;
+            } else {
+
+                /* UDP,TCP -> ICMP port unreachable */
+                icmp_send_error(sr, buffer, len,
+                                ICMP_TYPE_UNREACHABLE, ICMP_CODE_PORT_UNREACH);
+                free(buffer);
+                return;
+            }
+
         } else {
 
-            /* UDP,TCP -> ICMP port unreachable */
-            icmp_send_error(sr, buffer, len,
-                            ICMP_TYPE_UNREACHABLE, ICMP_CODE_PORT_UNREACH);
-        }
+            ip_header->ip_ttl -= 1;
+            sr_rt_t* rt_entry = sr_get_rt_entry(sr, ip_header->ip_dst);
 
-    } else {
+            /*
+                If destined to others, lookup routing table entry  note that gateway is next hop
+                decrease TTL, If TTL = 0; ICMP Time exceeded
+            */
+            if(ip_header->ip_ttl <= 0) {
+                /* ICMP Time exceeded */
+                icmp_send_error(sr, buffer, len,
+                                ICMP_TYPE_TIME_EXCEEDED, 0);
+            } else {
+                /*
+                    based on returned routing entry:
 
-      ip_header->ip_ttl -= 1;
-      sr_rt_t* rt_entry = sr_get_rt_entry(sr, ip_header->ip_dst);
+                    if routing entry not found (is NULL) -> ICMP  network unreachable
+                    if routing entry is found, get mac_address of next_hop using gateway address
+                        # When sending packet to next_hop_ip
+                        entry = arpcache_lookup(next_hop_ip)
 
-      /*
-          If destined to others, lookup routing table entry  note that gateway is next hop
-          decrease TTL, If TTL = 0; ICMP Time exceeded
-      */
-      if(ip_header->ip_ttl <= 0) {
-        /* ICMP Time exceeded */
-        icmp_send_error(sr, buffer, len,
-                        ICMP_TYPE_TIME_EXCEEDED, 0);
-      } else {
-      /*
-          based on returned routing entry:
+                        if entry:
+                            use next_hop_ip->mac mapping in entry to send the packet
+                            free entry
+                            free packet sent
+                        else:
+                            req = arpcache_queuereq(next_hop_ip, packet, len)
+                            handle_arpreq(req)
+                            The packet argument should not be freed by the caller.
+                */
+                if(rt_entry == NULL) {
+                    /* ICMP network unreachable */
+                    icmp_send_error(sr, buffer, len,
+                                    ICMP_TYPE_UNREACHABLE, ICMP_CODE_NET_UNREACH);
+                } else {
 
-          if routing entry not found (is NULL) -> ICMP  network unreachable
-          if routing entry is found, get mac_address of next_hop using gateway address
-            # When sending packet to next_hop_ip
-            entry = arpcache_lookup(next_hop_ip)
+                    /* update checksum in IP header*/
+                    ip_header->ip_sum = 0;
+                    ip_header->ip_sum = cksum(ip_header, IP_HDR_LEN);
 
-            if entry:
-                use next_hop_ip->mac mapping in entry to send the packet
-                free entry
-                free packet sent
-            else:
-                req = arpcache_queuereq(next_hop_ip, packet, len)
-                handle_arpreq(req)
-                The packet argument should not be freed by the caller.
-      */
-        if(rt_entry == NULL) {
-          /* ICMP network unreachable */
-          icmp_send_error(sr, buffer, len,
-                          ICMP_TYPE_UNREACHABLE, ICMP_CODE_NET_UNREACH);
-        } else {
+                    /* next hop is determined by gateway address from routing entry*/
+                    in_addr_t next_hop_ip = rt_entry->gw.s_addr;
+                    /* intially set the destination mac_address to 0x0000*/
+                    memset(ether_header->ether_dhost, 0, ETHER_ADDR_LEN);
+                    ether_header->ether_type = htons(ethertype_ip);
+                    /* get infromation regarding the gateways interface*/
+                    sr_if_t* gw_iface = sr_get_interface(sr, rt_entry->interface);
+                    memcpy(ether_header->ether_shost, gw_iface->addr,  ETHER_ADDR_LEN);
 
-          /* update checksum in IP header*/
-          ip_header->ip_sum = 0;
-          ip_header->ip_sum = cksum(ip_header, IP_HDR_LEN);
+                    /* get arp entry*/
+                    sr_arpentry_t* arp_entry = sr_arpcache_lookup(&(sr->cache), next_hop_ip);
+                    if(arp_entry != NULL) {
 
-          /* next hop is determined by gateway address from routing entry*/
-          in_addr_t next_hop_ip = rt_entry->gw.s_addr;
-          /* intially set the destination mac_address to 0x0000*/
-          memset(ether_header->ether_dhost, 0, ETHER_ADDR_LEN);
-          ether_header->ether_type = htons(ethertype_ip);
-          /* get infromation regarding the gateways interface*/
-          sr_if_t* gw_iface = sr_get_interface(sr, rt_entry->interface);
-          memcpy(ether_header->ether_shost, gw_iface->addr,  ETHER_ADDR_LEN);
+                        fprintf(stderr, "\n\nArp entry found! Packet being sent.\n\n");
+                        /* copy over mac address we just found */
+                        memcpy(ether_header->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
+                        sr_send_packet(sr, buffer, len, rt_entry->interface);
 
-          /* get arp entry*/
-          sr_arpentry_t* arp_entry = sr_arpcache_lookup(&(sr->cache), next_hop_ip);
-          if(arp_entry != NULL) {
+                        fprintf(stderr, "\n\nPacket Forwarded \n\n");
+                        free(arp_entry);
+                        free(buffer);
 
-            fprintf(stderr, "\n\nArp entry found! Packet being sent.\n\n");
-            /* copy over mac address we just found */
-            memcpy(ether_header->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
-            sr_send_packet(sr, buffer, len, rt_entry->interface);
+                    } else {
 
-            fprintf(stderr, "\n\nPacket Forwarded \n\n");
-            free(arp_entry);
-            free(buffer);
+                        fprintf(stderr, "Arp entry not found! Packet put in queue.\n");
 
-          } else {
+                        /* 
+                        queue packet into cache
+                        DON'T FREE PACKET
+                        */
+                        sr_arpreq_t* req = sr_arpcache_queuereq(&(sr->cache), next_hop_ip, buffer, len, rt_entry->interface);
+                        handle_arpreq(sr, req);
 
-             fprintf(stderr, "Arp entry not found! Packet put in queue.\n");
-
-            /* 
-              queue packet into cache
-              DON'T FREE PACKET
-             */
-            sr_arpreq_t* req = sr_arpcache_queuereq(&(sr->cache), next_hop_ip, buffer, len, rt_entry->interface);
-            handle_arpreq(sr, req);
-
-          }
-        } /* end  rt_entry not null */
-      } /* end  ttl > 0 */
-    }/* end destined to other router */
-
-
+                    }
+                } /* end  rt_entry not null */
+            } /* end  ttl > 0 */
+        }/* end destined to other router */
+    } /* end iteration over interface list */
   }
-
-
 }/* end sr_ForwardPacket */
 
 /**
@@ -409,6 +411,10 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
 
     /* lookup the new dst ip in the routing table */
     sr_rt_t *rt_entry = sr_get_rt_entry(sr, ip_header->ip_dst);
+    if (rt_entry == NULL) {
+        free(dup_packet);
+        return;
+    }
     sr_if_t *out_iface = sr_get_interface(sr, rt_entry->interface);
 
     /* Use the outgoing interface's IP as the source */
@@ -444,8 +450,7 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
 
     /* Calculate the new checksum for the icmp */
     icmp_err->icmp_sum = 0;
-    uint16_t checksum = cksum(icmp_err, ICMP_ERR_HDR_LEN);
-    icmp_err->icmp_sum = checksum;
+    icmp_err->icmp_sum = cksum(icmp_err, ICMP_ERR_HDR_LEN);
 
     /*** Prepare ethernet header - lookup in routing table */
     sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t *)(dup_packet);
