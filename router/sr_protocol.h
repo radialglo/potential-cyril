@@ -88,14 +88,14 @@ struct sr_icmp_hdr {
 typedef struct sr_icmp_hdr sr_icmp_hdr_t;
 
 /* Structure of ICMP Type 0 header */
-struct sr_icmp_t0_hdr {
+struct sr_icmp_echo_hdr {
     uint8_t icmp_type;
     uint8_t icmp_code;
     uint16_t icmp_sum;
     uint16_t icmp_identifier;
     uint16_t icmp_seq_num;
 } __attribute__ ((packed)) ;
-typedef struct sr_icmp_t0_hdr sr_icmp_t0_hdr_t;
+typedef struct sr_icmp_echo_hdr sr_icmp_echo_hdr_t;
 
 
 /* Structure of a type3 ICMP header
@@ -217,7 +217,7 @@ typedef struct sr_arp_hdr sr_arp_hdr_t;
 #define ETHER_HDR_LEN sizeof(sr_ethernet_hdr_t)
 #define ARP_HDR_LEN sizeof(sr_arp_hdr_t)
 #define IP_HDR_LEN sizeof(sr_ip_hdr_t)
-#define ICMP_T0_HDR_LEN sizeof(sr_icmp_t0_hdr_t)
+#define ICMP_ECHO_HDR_LEN sizeof(sr_icmp_echo_hdr_t)
 #define ICMP_T3_HDR_LEN sizeof(sr_icmp_t3_hdr_t)
 #define ICMP_ERR_HDR_LEN sizeof(sr_icmp_err_hdr_t)
 /* ==== END CUSTOM === */

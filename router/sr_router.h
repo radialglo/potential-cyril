@@ -71,10 +71,9 @@ void sr_handlepacket(struct sr_instance* , uint8_t * , unsigned int , char* );
 void swap_ether_addr(sr_ethernet_hdr_t *);
 void calculate_ip_cksum(sr_ip_hdr_t *);
 void icmp_send_echo_reply(struct sr_instance * , uint8_t * ,
-                        unsigned int , const char * );
+                          unsigned int );
 void icmp_send_error(struct sr_instance * , uint8_t * ,
-                     unsigned int , const char * ,
-                     uint8_t , uint8_t );
+                     unsigned int , uint8_t , uint8_t );
 /* --- CUSTOM --- */
 
 /* -- sr_if.c -- */

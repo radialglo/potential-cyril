@@ -65,7 +65,7 @@ void handle_arpreq(struct sr_instance *sr, sr_arpreq_t *req) {
             sr_packet_t *nxt;
             for (pkt = req->packets; pkt != NULL; pkt = nxt) {
                 nxt = pkt->next;
-                icmp_send_error(sr, pkt->buf, pkt->len, pkt->iface,
+                icmp_send_error(sr, pkt->buf, pkt->len,
                                 ICMP_TYPE_UNREACHABLE, ICMP_CODE_HOST_UNREACH);
             }
 
