@@ -43,6 +43,7 @@
 
 #include "sha1.h"
 #include "vnscommand.h"
+#include "sr_utils.h"
 
 static void sr_log_packet(struct sr_instance* , uint8_t* , int );
 static int  sr_arp_req_not_for_us(struct sr_instance* sr,
@@ -571,6 +572,10 @@ int sr_send_packet(struct sr_instance* sr /* borrowed */,
     assert(sr);
     assert(buf);
     assert(iface);
+
+    /* print */
+    print_hdr_eth(buf);
+    print_hdr_ip(buf + ETHER_HDR_LEN);
 
     /* don't waste my time ... */
     if ( len < sizeof(struct sr_ethernet_hdr) ){

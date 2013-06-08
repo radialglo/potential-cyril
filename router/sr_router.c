@@ -104,7 +104,9 @@ void sr_handlepacket(struct sr_instance* sr,
    */
 
   sr_if_t *iface = sr_get_interface(sr, interface);
+
   print_hdr_eth((uint8_t *)ether_header);
+
   sr_print_if(iface);
   uint8_t broadcast_addr[ETHER_ADDR_LEN];
   memset(broadcast_addr, 0xFF, ETHER_ADDR_LEN);
@@ -447,7 +449,9 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
 
     /* types 3, 11 return the IP header + 8 bytes of original datagram data */
     /* Copy the IP header */
-    memcpy(icmp_err->data, ip_header, IP_HDR_LEN);
+    /*memcpy(icmp_err->data, ip_header, IP_HDR_LEN);*/
+    memcpy(icmp_err->data, packet + ETHER_HDR_LEN, IP_HDR_LEN);
+
     /* Copy the first 8 bytes of the original datagram data */
     /* Use the original packet! */
     /*memcpy(icmp_err->data + IP_HDR_LEN,
@@ -468,11 +472,10 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
 
     /* get arp entry */
 
-    
-    /*
     in_addr_t next_hop_ip = rt_entry->gw.s_addr;
     sr_arpentry_t *arp_entry = sr_arpcache_lookup(&(sr->cache), next_hop_ip);
     if (arp_entry != NULL) {
+        /* copy the cached mac to be the destination MAC */
         memcpy(ether_header->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
         print_hdr_eth((uint8_t *)ether_header);
         print_hdr_ip((uint8_t *)ip_header);
@@ -481,13 +484,17 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
         free(arp_entry);
         free(buffer);
     } else {
+        /* push the icmp onto the queue */
         sr_arpreq_t *req = sr_arpcache_queuereq(&(sr->cache),
             next_hop_ip, buffer, buffer_size, out_iface->name);
         handle_arpreq(sr, req);
-    } */
+    }
+    /*
 swap_ether_addr(ether_header);                                                  
+
         print_hdr_eth((uint8_t *)ether_header);
         print_hdr_ip((uint8_t *)ip_header);
         print_hdr_icmp((uint8_t *)icmp_err);
-    sr_send_packet(sr, buffer, buffer_size, out_iface->name);   
+    sr_send_packet(sr, buffer, buffer_size, out_iface->name);
+    */
 }
