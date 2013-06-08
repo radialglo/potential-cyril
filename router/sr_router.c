@@ -169,7 +169,7 @@ void sr_handlepacket(struct sr_instance* sr,
        ICMP -> ICMP processing (echo request, echo reply)
        UDP,TCP -> ICMP port unreachable
     */
-    for (; iface != NULL; iface = iface->next) { 
+    for (iface = sr->if_list; iface != NULL; iface = iface->next) { 
 
         if(ntohl(ip_header->ip_dst) == ntohl(iface->ip)) {
 
@@ -399,12 +399,13 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
                      unsigned int len, uint8_t type, uint8_t code) {
 
     /* This icmp packet will return its own data */
-    unsigned int packet_size = ETHER_HDR_LEN + IP_HDR_LEN + ICMP_ERR_HDR_LEN;
-    uint8_t *dup_packet = malloc(packet_size);
-    memcpy(dup_packet, packet, packet_size);
+    unsigned int buffer_size = ETHER_HDR_LEN + IP_HDR_LEN + ICMP_ERR_HDR_LEN;
+    uint8_t *buffer = malloc(buffer_size);
+    memset(buffer, 0, buffer_size);
+    memcpy(buffer, packet, ETHER_HDR_LEN + IP_HDR_LEN);
 
     /*** Prepare IP header */
-    sr_ip_hdr_t *ip_header = (sr_ip_hdr_t *)(dup_packet + ETHER_HDR_LEN);
+    sr_ip_hdr_t *ip_header = (sr_ip_hdr_t *)(buffer + ETHER_HDR_LEN);
 
     /* The new dst IP is the client's src IP */
     ip_header->ip_dst = ip_header->ip_src;
@@ -412,7 +413,7 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
     /* lookup the new dst ip in the routing table */
     sr_rt_t *rt_entry = sr_get_rt_entry(sr, ip_header->ip_dst);
     if (rt_entry == NULL) {
-        free(dup_packet);
+        free(buffer);
         return;
     }
     sr_if_t *out_iface = sr_get_interface(sr, rt_entry->interface);
@@ -435,7 +436,7 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
 
     /*** Prepare the ICMP header */
     sr_icmp_err_hdr_t *icmp_err =
-        (sr_icmp_err_hdr_t *)(dup_packet + ETHER_HDR_LEN + IP_HDR_LEN);
+        (sr_icmp_err_hdr_t *)(buffer + ETHER_HDR_LEN + IP_HDR_LEN);
 
     /* 1 byte each, don't need to convert to network byte order */
     icmp_err->icmp_type = type;
@@ -443,18 +444,22 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
 
     /* types 3, 11 return the IP header + 8 bytes of original datagram data */
     /* Copy the IP header */
-    memcpy(&(icmp_err->data), ip_header, IP_HDR_LEN);
+    memcpy(icmp_err->data, ip_header, IP_HDR_LEN);
     /* Copy the first 8 bytes of the original datagram data */
-    memcpy(&(icmp_err->data) + IP_HDR_LEN,
-        dup_packet + ETHER_HDR_LEN + IP_HDR_LEN, ICMP_DATA_SIZE - IP_HDR_LEN);
+    /* Use the original packet! */
+    /*memcpy(icmp_err->data + IP_HDR_LEN,
+        packet + ETHER_HDR_LEN + IP_HDR_LEN, ICMP_DATA_SIZE - IP_HDR_LEN);*/
+    memcpy(icmp_err->data + IP_HDR_LEN,
+        packet + ETHER_HDR_LEN + IP_HDR_LEN, 8);
 
     /* Calculate the new checksum for the icmp */
     icmp_err->icmp_sum = 0;
     icmp_err->icmp_sum = cksum(icmp_err, ICMP_ERR_HDR_LEN);
 
     /*** Prepare ethernet header - lookup in routing table */
-    sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t *)(dup_packet);
+    sr_ethernet_hdr_t *ether_header = (sr_ethernet_hdr_t *)(buffer);
     /* the ether_type should be the same */
+    ether_header->ether_type = htons(ethertype_ip);
 
     /* Use the gateway's interface MAC as the source MAC */
     memcpy(ether_header->ether_shost, out_iface->addr, ETHER_ADDR_LEN);
@@ -465,13 +470,13 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
     if (arp_entry != NULL) {
         /* Use cached ARP as the dst MAC */
         memcpy(ether_header->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
-        sr_send_packet(sr, dup_packet, len, out_iface->name);
+        sr_send_packet(sr, buffer, buffer_size, out_iface->name);
         free(arp_entry);
-        free(dup_packet);
+        free(buffer);
     } else {
         /* Not found in the ARP cache so queue it */
         sr_arpreq_t *req = sr_arpcache_queuereq(&(sr->cache),
-            next_hop_ip, dup_packet, len, out_iface->name);
+            next_hop_ip, buffer, buffer_size, out_iface->name);
         handle_arpreq(sr, req);
     }
 }
