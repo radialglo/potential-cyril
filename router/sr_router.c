@@ -468,14 +468,11 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
     /* the ether_type should be the same */
     ether_header->ether_type = htons(ethertype_ip);
 
-    /*memcpy(ether_header->ether_shost, out_iface->addr, ETHER_ADDR_LEN);*/
-
-    /* get arp entry */
+    /*memcpy(ether_header->ether_shost, out_iface->addr, ETHER_ADDR_LEN);
 
     in_addr_t next_hop_ip = rt_entry->gw.s_addr;
     sr_arpentry_t *arp_entry = sr_arpcache_lookup(&(sr->cache), next_hop_ip);
     if (arp_entry != NULL) {
-        /* copy the cached mac to be the destination MAC */
         memcpy(ether_header->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
         print_hdr_eth((uint8_t *)ether_header);
         print_hdr_ip((uint8_t *)ip_header);
@@ -484,17 +481,14 @@ void icmp_send_error(struct sr_instance *sr, uint8_t *packet,
         free(arp_entry);
         free(buffer);
     } else {
-        /* push the icmp onto the queue */
         sr_arpreq_t *req = sr_arpcache_queuereq(&(sr->cache),
             next_hop_ip, buffer, buffer_size, out_iface->name);
         handle_arpreq(sr, req);
-    }
-    /*
-swap_ether_addr(ether_header);                                                  
+    }*/
+    swap_ether_addr(ether_header);                                                  
 
         print_hdr_eth((uint8_t *)ether_header);
         print_hdr_ip((uint8_t *)ip_header);
         print_hdr_icmp((uint8_t *)icmp_err);
     sr_send_packet(sr, buffer, buffer_size, out_iface->name);
-    */
 }

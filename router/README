@@ -11,8 +11,20 @@
 We implemented the arp, routing and icmp.
 However there is a bug with the icmp.
 
+EDIT:
+We fixed the bug with the icmp. We were copying the old ip header into
+the icmp data field instead of the new one.
 
+Our code is mostly in sr_cache.c and sr_router.c.
+
+After fixing the bug, the type 3 and type 11 (unreachable and time exceeded)
+works properly, before it doesn't at all.
 
 /* ==== CONTRIBUTION DETAILS ===*/
 Anthony - arp, routing.
+    ARP caching, sending, replying.
+    sr_handlepacket
+
 Stanley - icmp.
+    icmp_send_error - for type 3 and type 11 icmp
+    icmp_send_echo_reply
